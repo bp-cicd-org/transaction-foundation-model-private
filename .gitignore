@@ -1,0 +1,9 @@
+data/TabFormer/
+data/decoder_corpus/
+data/embeddings/
+data/outputs/
+models/decoder-demo/
+tmp_nb_rerun_results/
+tmp_nb_test_results/
+src/__pycache__/
+src/tokenizer/__pycache__/

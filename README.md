@@ -1,37 +1,172 @@
-<h2><img align="center" src="https://github.com/user-attachments/assets/cbe0d62f-c856-4e0b-b3ee-6184b7c4d96f">NVIDIA AI Blueprint: Blueprint Name</h2>
+<h2><img align="center" src="https://github.com/user-attachments/assets/cbe0d62f-c856-4e0b-b3ee-6184b7c4d96f"> NVIDIA Developer Example: Transaction Foundation Model</h2>
 
-[//]: # (Brief blueprint positioning from messaging document)
+Build a domain-specific foundation model for financial transaction data. This developer example uses a custom GPU-accelerated tokenizer to convert tabular payment records into structured token sequences, pretrains a Llama-architecture causal language model with NVIDIA NeMo AutoModel, and extracts learned embeddings for downstream fraud detection with XGBoost.
 
-> ⚠️ **Third-Party Software Notice**  
-> This project will download and install additional third-party open source software projects.  
+> **Third-Party Software Notice**
+> This project will download and install additional third-party open source software projects.
 > Please review the license terms of these open source projects before use.
 
-[//]: # (Get developer into the code quickly) 
-### Quickstart
-- Deployment Instructions
-- Validation of Setup - sample input/output
+## Table of Contents
 
-[//]: # (Provide architecture, software componnents, hardware requirements, link to API spec) 
+- [Quickstart](#quickstart)
+- [Overview](#overview)
+  - [Architecture Diagram](#architecture-diagram)
+  - [Notebooks](#notebooks)
+  - [Software Components](#software-components)
+  - [Hardware Requirements](#hardware-requirements)
+- [Deployment](#deployment)
+  - [Prerequisites](#prerequisites)
+  - [Steps](#steps)
+- [Customization](#customization)
+- [Model Architecture](#model-architecture)
+- [License](#license)
+
+---
+
+### Quickstart
+
+1. Pull and launch the [NeMo Framework container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo) (25.09.01+) with GPU access and port mapping:
+   ```bash
+   docker run --gpus all --rm -it \
+     -v $(pwd):/workspace \
+     --shm-size=8g \
+     -p 8888:8888 \
+     --ulimit memlock=-1 \
+     nvcr.io/nvidia/nemo:25.09.01
+   ```
+   - `--shm-size=8g` — increases shared memory to prevent DataLoader crashes under PyTorch multi-process loading
+   - `-p 8888:8888` — publishes the Jupyter port to the host browser
+   - `--ulimit memlock=-1` — removes the locked-memory limit required by some CUDA operations
+2. Inside the container, install Git LFS, fetch the checkpoint artifacts, install dependencies, and start Jupyter:
+   ```bash
+   apt-get update && apt-get install -y git-lfs
+   git lfs install
+   git lfs pull
+   pip install -r requirements.txt
+   jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+   ```
+   Open `http://localhost:8888/?token=...` in your browser.
+3. Run `01_dataset_baseline.ipynb` to download the dataset and establish an XGBoost baseline.
+4. Continue through notebooks 02–05 sequentially, or skip training (notebook 03) by using the pre-trained checkpoint below.
+
+**Pre-trained Model Checkpoint**
+
+A pre-trained checkpoint (~56 MB) is tracked with Git LFS so you can skip training and go directly to inference.
+
+After cloning the repository, install Git LFS and run `git lfs pull` so `models/decoder-foundation-model/` contains the checkpoint files expected by notebooks 04 and 05.
+
+---
+
 ### Overview
-- Technical Diagram (created in draw.io)
+
+#### Architecture Diagram
+
+<!-- TODO: Replace with finalized architecture diagram -->
+> **Architecture diagram coming soon.** The diagram will illustrate the end-to-end pipeline from raw transaction data through GPU-accelerated tokenization, Llama pretraining, embedding extraction, and downstream fraud detection.
+
+#### Notebooks
+
+| # | Notebook | Description |
+|---|----------|-------------|
+| 1 | `01_dataset_baseline.ipynb` | Load the TabFormer financial transaction dataset, create temporal train/val/test splits, and train a GPU-accelerated XGBoost baseline for fraud detection. |
+| 2 | `02_seq_preproc_tokenization.ipynb` | Build a custom GPU-accelerated tokenizer pipeline that converts transaction records into domain-specific token sequences. |
+| 3 | `03_foundation_model_training.ipynb` | Pretrain a Llama-architecture decoder model (≈29M parameters) on tokenized transaction sequences using NeMo AutoModel with causal language modeling. |
+| 4 | `04_inference_embedding_extraction.ipynb` | Load the pretrained model, run GPU inference, extract 512-dimensional embeddings via last-token pooling, and visualize with UMAP. |
+| 5 | `05_xgboost_fraud_detection.ipynb` | Compare XGBoost fraud detection using raw features, foundation model embeddings, and combined features. |
 
 #### Software Components
-- List of NIMs and other software
+
+- **NVIDIA NeMo AutoModel** — Foundation model training and inference
+- **NVIDIA RAPIDS (cuDF, cuML)** — GPU-accelerated data processing and tokenization
+- **PyTorch 2.x with CUDA 12** — Deep learning framework
+- **HuggingFace Transformers** — Model checkpointing and loading
+- **XGBoost (GPU)** — Gradient-boosted trees for fraud detection
 
 #### Hardware Requirements
-GPU, CPU, system memory, disk space
 
-#### API Definition
+| Component | Minimum |
+|-----------|---------|
+| GPU | 1× NVIDIA A100 (80 GB) or H100 |
+| System RAM | 32 GB |
+| OS | Ubuntu 22.04 |
 
-[//]: # (Detailed deployment steps) 
+---
+
 ### Deployment
 
 #### Prerequisites
-- NVAIE developer license
-- API Key
 
-[//]: # (Detailed customization steps) 
+- NVIDIA GPU with 80 GB+ memory
+- NeMo Framework container (25.09.01+)
+- Python 3.10+
+
+#### Steps
+
+1. Pull the NeMo container:
+   ```bash
+   docker pull nvcr.io/nvidia/nemo:25.09.01
+   ```
+2. Launch with GPU access, mount this repository, and publish the Jupyter port:
+   ```bash
+   docker run --gpus all --rm -it \
+     -v $(pwd):/workspace \
+     --shm-size=8g \
+     -p 8888:8888 \
+     --ulimit memlock=-1 \
+     nvcr.io/nvidia/nemo:25.09.01
+   ```
+   > **Remote host**: If running on a remote machine, add SSH port forwarding (`ssh -L 8888:localhost:8888 user@host`) so the Jupyter server is reachable from your local browser.
+3. Install Git LFS and additional dependencies:
+   ```bash
+   apt-get update && apt-get install -y git-lfs
+   git lfs install
+   git lfs pull
+   pip install -r requirements.txt
+   ```
+4. Start Jupyter inside the container:
+   ```bash
+   jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+   ```
+   Open the URL printed in the terminal (e.g. `http://localhost:8888/?token=...`) in your browser.
+5. Run notebooks sequentially or use the pre-trained checkpoint for notebooks 04–05.
+
+---
+
 ### Customization
 
+The developer example is designed for extensibility:
+
+- **Tokenizer** — The modular tokenizer pipeline (`src/tokenizer/`) can be adapted to different transaction schemas by adding or replacing individual tokenizer components.
+- **Model Architecture** — Training hyperparameters and model configuration are in `configs/pretrain_financial_llama.yaml`.
+- **Downstream Tasks** — Replace XGBoost with any classifier that accepts fixed-length feature vectors.
+- **Evaluation** — See [`evaluate/`](evaluate/) for evaluation utilities and benchmark scripts.
+
+See [`customize/`](customize/) for additional guidance.
+
+---
+
+### Model Architecture
+
+| Parameter | Value |
+|-----------|-------|
+| Architecture | Llama (decoder-only transformer) |
+| Parameters | ≈29M |
+| Hidden size | 512 |
+| Layers | 8 |
+| Attention | Grouped Query Attention (8 query heads, 2 KV heads) |
+| Context window | 8,192 tokens (RoPE) |
+| Activation | SwiGLU |
+| Normalization | RMSNorm |
+| Vocabulary | ≈6,251 domain-specific tokens |
+
+---
+
+### License
+
+By using this software, you are agreeing to the terms and conditions of the license and acceptable use policy.
+
+**GOVERNING TERMS**: This developer example is governed by the [NVIDIA Software License Agreement](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-software-license-agreement/) and [Product Specific Terms for AI Products](https://www.nvidia.com/en-us/agreements/enterprise-software/product-specific-terms-for-ai-products/).
 
 This project will download and install additional third-party open source software projects. Review the license terms of these open source projects before use.
+
+Please report security vulnerabilities or NVIDIA AI concerns [here](https://www.nvidia.com/en-us/support/submit-security-vulnerability/).
