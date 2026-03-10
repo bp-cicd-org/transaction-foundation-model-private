@@ -139,9 +139,6 @@ The developer example is designed for extensibility:
 - **Tokenizer** — The modular tokenizer pipeline (`src/tokenizer/`) can be adapted to different transaction schemas by adding or replacing individual tokenizer components.
 - **Model Architecture** — Training hyperparameters and model configuration are in `configs/pretrain_financial_llama.yaml`.
 - **Downstream Tasks** — Replace XGBoost with any classifier that accepts fixed-length feature vectors.
-- **Evaluation** — See [`evaluate/`](evaluate/) for evaluation utilities and benchmark scripts.
-
-See [`customize/`](customize/) for additional guidance.
 
 ---
 
