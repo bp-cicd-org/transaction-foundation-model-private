@@ -1,4 +1,4 @@
-<h2><img align="center" src="https://github.com/user-attachments/assets/cbe0d62f-c856-4e0b-b3ee-6184b7c4d96f"> NVIDIA Developer Example: Transaction Foundation Model</h2>
+<h2><img align="center" src="https://github.com/user-attachments/assets/cbe0d62f-c856-4e0b-b3ee-6184b7c4d96f"> NVIDIA Developer Example: Build Your Own Transaction Foundation Model</h2>
 
 Financial transaction data is one of the richest signals available in the enterprise. Every swipe, transfer, and payment encodes patterns of human behavior — from daily spending habits to subtle shifts that precede fraud. Traditional approaches rely on hand-crafted features and rules that are brittle, slow to adapt, and blind to the deep sequential structure in transaction histories. Foundation models change this equation: by pretraining on large volumes of unlabeled transaction sequences, they learn general-purpose representations of financial behavior that transfer to a wide range of downstream tasks — fraud detection, anomaly scoring, customer segmentation, and personalized financial services.
 
@@ -12,11 +12,26 @@ This developer example shows how to build such a model end-to-end on NVIDIA GPUs
 
 #### Software Components
 
+##### NVIDIA Technology
+
 - **NVIDIA NeMo AutoModel** — Foundation model training and inference
 - **NVIDIA RAPIDS (cuDF, cuML)** — GPU-accelerated data processing and tokenization
-- **PyTorch 2.x with CUDA 12** — Deep learning framework
+
+##### 3rd Party Software
+
+- **PyTorch 2.x** — Deep learning framework
 - **HuggingFace Transformers** — Model checkpointing and loading
-- **XGBoost (GPU)** — Gradient-boosted trees for fraud detection
+- **XGBoost** — Gradient-boosted trees for fraud detection
+- **scikit-learn** — Classical ML preprocessing, metrics, and baseline utilities
+- **pandas** — CPU dataframe operations and interoperability with GPU pipelines
+- **NumPy** — Array operations used across preprocessing and inference
+- **CuPy** — GPU array operations for tokenizer and embedding workflows
+- **matplotlib** — Static visualizations
+- **seaborn** — Statistical plotting for dataset exploration
+- **plotly** — Interactive 3D embedding visualization
+- **tqdm** — Progress bars in notebook inference workflows
+- **ipywidgets** — Notebook widget support
+- **torchdata** — Stateful data loading for model training
 
 > **Third-Party Software Notice**
 > This project will download and install additional third-party open source software projects.
@@ -92,6 +107,7 @@ Notebook 03 runs a short 30-step demo to illustrate the training pipeline; its o
 | GPU | 1× NVIDIA A100 (80 GB) or H100 |
 | System RAM | 32 GB |
 | OS | Ubuntu 22.04+ |
+| CUDA | CUDA 12 (provided via the NeMo Framework container) |
 | Container | [NeMo Framework](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo) 25.09.01+ |
 | Python | 3.10+ |
 
