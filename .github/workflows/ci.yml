@@ -12,7 +12,6 @@
 #
 # Required secret: NGC_API_KEY — NVIDIA NGC API key for docker login to nvcr.io
 #   (NeMo image is not anonymously pullable; login as user '$oauthtoken', password = key)
-#   Alternative: repository secret NVIDIA_API_KEY is accepted if NGC_API_KEY is unset.
 # Optional: TEST_DOCKER_PULL_KEY — nvcr.io token for blueprint-github-test-image pull + pytest
 #   (Run Test Code exits early if unset, same as blueprint).
 # Optional: HUGGING_FACE_HUB_TOKEN — passed into papermill container as HF_TOKEN if notebooks need HF.
@@ -90,22 +89,22 @@ jobs:
       - name: Docker login to NGC (required for nvcr.io)
         env:
           NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -euo pipefail
-          KEY="${NGC_API_KEY:-${NVIDIA_API_KEY:-}}"
-          if [ -z "${KEY}" ]; then
-            echo "::error::nvcr.io requires NGC login. Add repository secret NGC_API_KEY (or NVIDIA_API_KEY)."
+          if [ -z "${NGC_API_KEY:-}" ]; then
+            echo "::error::nvcr.io requires NGC login. Add repository secret NGC_API_KEY."
             echo "Create a key: https://org.ngc.nvidia.com/setup/api-keys — Docker username is literally: \$oauthtoken"
             exit 1
           fi
-          echo "${KEY}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
+          echo "${NGC_API_KEY}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
           echo "NGC docker login OK"
 
       - name: Stop any previous container
         if: always()
         run: docker rm -f "${{ env.CONTAINER_NAME }}" 2>/dev/null || true
 
+      # NeMo NGC images ship ENTRYPOINT=/opt/nvidia/nvidia_entrypoint.sh (CUDA/driver env).
+      # Do not replace with plain bash — that skips NVIDIA init. CMD "sleep infinity" keeps PID1 up for docker exec.
       - name: Start NeMo backend (PID 1 keeps container alive)
         run: |
           set -euo pipefail
@@ -127,10 +126,9 @@ jobs:
             -v "${DEST}:/notebooks"
             -u root
             -w /notebooks
-            --entrypoint /bin/bash
           )
 
-          docker run "${COMMON_ARGS[@]}" "${IMG}" -lc 'sleep infinity'
+          docker run "${COMMON_ARGS[@]}" "${IMG}" sleep infinity
 
           sleep 5
           docker ps -a --filter "name=${NAME}"
