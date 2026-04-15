@@ -206,18 +206,6 @@ jobs:
           install_script="${RUNNER_TEMP:-/tmp}/tfm-inline-setup.sh"
           cat <<'SETUP_EOF' > "${install_script}"
           set -euo pipefail
-          # Install uv
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          export PATH="$HOME/.local/bin:$PATH"
-          uv --version
-
-          cd /notebooks
-          if [ -f requirements.txt ]; then
-            uv pip install --system -r requirements.txt
-          else
-            echo "WARNING: requirements.txt not found under /notebooks; skipping uv pip install"
-          fi
-
           if [ -f /opt/conda/etc/profile.d/conda.sh ]; then
             source /opt/conda/etc/profile.d/conda.sh
           elif [ -f /usr/local/etc/profile.d/conda.sh ]; then
@@ -226,8 +214,19 @@ jobs:
             echo "ERROR: Could not find conda.sh to run mamba"
             exit 1
           fi
-          # CuPy uses CONDA_PREFIX for CUDA toolkit paths; sourcing conda.sh alone often leaves it unset.
           conda activate base
+
+          # NeMo image: /usr/bin/python3 is PEP 668 "externally managed" — do not use uv --system there.
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
+          uv --version
+
+          cd /notebooks
+          if [ -f requirements.txt ]; then
+            uv pip install --python "$(which python)" -r requirements.txt
+          else
+            echo "WARNING: requirements.txt not found under /notebooks; skipping uv pip install"
+          fi
 
           mamba install -c conda-forge -c rapidsai cupy==14.0.1 numpy==2.2.6 -y
           SETUP_EOF
