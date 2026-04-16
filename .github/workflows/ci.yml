@@ -2,6 +2,9 @@
 # Transaction Foundation Model — NeMo container + Papermill (ordered notebooks)
 # =============================================================================
 #
+# Policy: fix workflow YAML for CI infra / install order / env; do not rewrite repo src here.
+# Application bugs belong in src (or dependency pins documented in README), not CI string-replace patches.
+#
 # Flow (same shape as single-cell RAPIDS blueprint; implementation differs):
 #   1. Check out, copy to DEST (workflow env; unique per run under /tmp) and mount as /notebooks
 #   2. Start NeMo Framework image (PID 1: sleep infinity — stable for docker exec)
@@ -90,7 +93,7 @@ jobs:
             echo "git-lfs not on runner; skipping"
           fi
 
-      # Repo-specific: no CI notebook patches here (blueprint had NB06/NB07 VRAM/path patches).
+      # Workflow-only changes belong here (runner, secrets, install order, RAPIDS pins). Do not patch application src in CI.
 
       - name: Docker login to NGC (required for nvcr.io)
         env:
