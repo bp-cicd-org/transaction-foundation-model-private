@@ -8,12 +8,12 @@
 #   3. docker exec: uv install, requirements.txt, mamba cupy/numpy (same pattern as blueprint setup)
 #   4. docker exec: for each notebook in PAPERMILL_NOTEBOOKS (space-separated), strip kernel-shutdown
 #      cells into /tmp (inline Python on runner → docker cp), then papermill. Repo .ipynb unchanged.
-#   Optional: blueprint-github-test-image validates HTML (requires TEST_DOCKER_PULL_KEY + layout below).
+#   Optional: TFM QA image validates papermill HTML (TEST_DOCKER_PULL_KEY + QA_TEST_IMAGE + paths below).
 #
 # Required secret: NGC_API_KEY — NVIDIA NGC API key for docker login to nvcr.io
 #   (NeMo image is not anonymously pullable; login as user '$oauthtoken', password = key)
-# Optional: TEST_DOCKER_PULL_KEY — nvcr.io token for blueprint-github-test-image pull + pytest
-#   (Run Test Code exits early if unset, same as blueprint).
+# Optional: TEST_DOCKER_PULL_KEY — nvcr.io token to pull QA_TEST_IMAGE
+# Optional: QA_TEST_IMAGE — set when you have a TFM HTML QA container (leave default empty to skip QA step).
 # Optional: HUGGING_FACE_HUB_TOKEN — passed into papermill container as HF_TOKEN if notebooks need HF.
 # Optional: SMTP_USERNAME, SMTP_PASSWORD — Gmail SMTP for Send mail (dawidd6/action-send-mail).
 # =============================================================================
@@ -36,7 +36,11 @@ env:
   NEMO_IMAGE: nvcr.io/nvidia/nemo:26.02.nemotron_3_super
   # Space-separated paths relative to repo root (under /notebooks in the container). Order matters.
   PAPERMILL_NOTEBOOKS: 01_dataset_baseline.ipynb 02_seq_preproc_tokenization.ipynb 03_foundation_model_training.ipynb 04_inference_embedding_extraction.ipynb 05_xgboost_fraud_detection.ipynb
-  BLUEPRINT_TEST_IMAGE: nvcr.io/rw983xdqtcdp/auto_test_team/blueprint-github-test-image:latest
+  # TFM HTML QA (placeholder until you publish an image). Empty = skip "Run Test Code" even if TEST_DOCKER_PULL_KEY is set.
+  QA_TEST_IMAGE: ""
+  # Inside QA container; must match what your future pytest/HTML tests expect.
+  QA_TEST_INPUT_PATH: transaction_foundation/v1.0.0
+  QA_PYTEST_MARK: transaction_foundation
   # When the NeMo image has no conda/mamba (venv-only): pip RAPIDS cu12 wheels (notebooks import cudf, cuml).
   RAPIDS_PIP_VERSION: "24.12.*"
   # Host copy of repo for docker mount/cp. Uses github.* only — runner context is invalid in workflow env on some GHE/validators.
@@ -310,9 +314,41 @@ jobs:
           else
             echo "No mamba/conda — installing RAPIDS for CUDA 12 via pip into active venv (cudf/cuml for notebooks)..."
             uv pip install --python "$(which python)" \
+              --extra-index-url https://pypi.nvidia.com \
               "cudf-cu12==${{ env.RAPIDS_PIP_VERSION }}" \
               "cuml-cu12==${{ env.RAPIDS_PIP_VERSION }}"
+            # CUDA math libs shipped as pip wheels (fixes libcusolver.so.* not found at cuml import).
+            uv pip install --python "$(which python)" \
+              nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 nvidia-cusolver-cu12 \
+              nvidia-cusparse-cu12 nvidia-cufft-cu12 nvidia-nccl-cu12 nvidia-curand-cu12 \
+              nvidia-nvjitlink-cu12 || true
           fi
+
+          cat >/tmp/tfm-cuda-ldpath.sh <<'LDPATH'
+          _site="$(python -c 'import site; print(site.getsitepackages()[0])' 2>/dev/null)" || _site=""
+          export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+          for d in /usr/local/cuda/lib64 /usr/local/cuda-12/lib64 /usr/local/cuda-12.4/lib64 /usr/local/cuda-12.6/lib64 /usr/lib/x86_64-linux-gnu; do
+            [ -d "$d" ] && export LD_LIBRARY_PATH="$d:${LD_LIBRARY_PATH:-}"
+          done
+          if [ -n "${_site}" ]; then
+            shopt -s nullglob
+            for _lib in "${_site}"/nvidia/*/lib; do
+              [ -d "$_lib" ] && export LD_LIBRARY_PATH="${_lib}:${LD_LIBRARY_PATH:-}"
+            done
+            shopt -u nullglob
+          fi
+          LDPATH
+          # shellcheck source=/dev/null
+          . /tmp/tfm-cuda-ldpath.sh
+          # Some cuML builds dlopen libcusolver.so.11; pip wheels ship .12 — symlink if missing.
+          _sp="$(python -c 'import site; print(site.getsitepackages()[0])' 2>/dev/null)" || _sp=""
+          if [ -n "${_sp}" ]; then
+            _cs="${_sp}/nvidia/cusolver/lib"
+            if [ -f "${_cs}/libcusolver.so.12" ] && [ ! -e "${_cs}/libcusolver.so.11" ]; then
+              ln -sf libcusolver.so.12 "${_cs}/libcusolver.so.11" || true
+            fi
+          fi
+
           SETUP_EOF
           chmod +x "${install_script}"
           docker cp "${install_script}" "${NAME}:/tmp/tfm-inline-setup.sh"
@@ -381,6 +417,10 @@ jobs:
           set -euo pipefail
           # shellcheck source=/dev/null
           source /tmp/tfm-activate-env.sh
+          if [ -f /tmp/tfm-cuda-ldpath.sh ]; then
+            # shellcheck source=/dev/null
+            . /tmp/tfm-cuda-ldpath.sh
+          fi
           mkdir -p /notebooks/notebook_output /tmp/papermill_stripped
           STRIP=/tmp/ci_strip_kernel_shutdown.py
           python -m pip install -q --upgrade pip
@@ -463,17 +503,24 @@ jobs:
         env:
           TEST_DOCKER_PULL_KEY: ${{ secrets.TEST_DOCKER_PULL_KEY }}
           DEST: ${{ env.DEST }}
+          QA_TEST_IMAGE: ${{ env.QA_TEST_IMAGE }}
+          QA_TEST_INPUT_PATH: ${{ env.QA_TEST_INPUT_PATH }}
+          QA_PYTEST_MARK: ${{ env.QA_PYTEST_MARK }}
         run: |
           set -euo pipefail
           if [ -z "${TEST_DOCKER_PULL_KEY:-}" ]; then
             echo "Skipping Run Test Code: repository secret TEST_DOCKER_PULL_KEY is not set."
             exit 0
           fi
+          if [ -z "${QA_TEST_IMAGE:-}" ]; then
+            echo "Skipping Run Test Code: set workflow env QA_TEST_IMAGE when a TFM HTML QA image is ready (placeholder is empty)."
+            exit 0
+          fi
           echo "======================================="
           echo "${TEST_DOCKER_PULL_KEY}" | docker login nvcr.io --username '$oauthtoken' --password-stdin
 
           SRC="${DEST}/notebook_output"
-          STAGING="${DEST}/blueprint_test_mount/input/single_cell_analysis/v1.2.0"
+          STAGING="${DEST}/blueprint_test_mount/input/${QA_TEST_INPUT_PATH}"
           mkdir -p "${STAGING}"
 
           stage_html() {
@@ -486,38 +533,37 @@ jobs:
             fi
           }
 
-          # Map TFM papermill HTML into filenames expected by blueprint-github-test-image (same as reference layout).
-          stage_html "result_01_dataset_baseline.html" "std_01_scRNA_analysis_preprocessing.html"
-          stage_html "result_02_seq_preproc_tokenization.html" "std_02_scRNA_analysis_extended.html"
-          stage_html "result_03_foundation_model_training.html" "std_03_scRNA_analysis_with_pearson_residuals.html"
-          stage_html "result_04_inference_embedding_extraction.html" "adv_04_scRNA_analysis_dask_out_of_core.html"
-          stage_html "result_05_xgboost_fraud_detection.html" "adv_05_spatial_demo.html"
-          echo "::warning::This repo has 5 notebooks; blueprint image may still expect adv_06/adv_07 HTML."
+          # Staged names are placeholders for a future TFM QA image; align pytest + paths in that image with QA_TEST_INPUT_PATH / QA_PYTEST_MARK.
+          stage_html "result_01_dataset_baseline.html" "std_01_dataset_baseline.html"
+          stage_html "result_02_seq_preproc_tokenization.html" "std_02_seq_preproc_tokenization.html"
+          stage_html "result_03_foundation_model_training.html" "std_03_foundation_model_training.html"
+          stage_html "result_04_inference_embedding_extraction.html" "adv_04_inference_embedding_extraction.html"
+          stage_html "result_05_xgboost_fraud_detection.html" "adv_05_xgboost_fraud_detection.html"
 
-          echo "::group::Staged HTML for blueprint test image"
+          echo "::group::Staged HTML for TFM QA (placeholder layout)"
           ls -la "${STAGING}" || true
           echo "::endgroup::"
 
-          docker pull "${{ env.BLUEPRINT_TEST_IMAGE }}"
-          QA_NAME="sc-blueprint-qa-${{ github.run_id }}-${{ github.run_attempt }}"
+          docker pull "${QA_TEST_IMAGE}"
+          QA_NAME="tfm-qa-${{ github.run_id }}-${{ github.run_attempt }}"
           docker rm -f "${QA_NAME}" 2>/dev/null || true
           docker create \
             --name "${QA_NAME}" \
             --entrypoint /bin/sh \
-            "${{ env.BLUEPRINT_TEST_IMAGE }}" \
+            "${QA_TEST_IMAGE}" \
             -c "sleep 86400"
           docker start "${QA_NAME}"
-          docker exec "${QA_NAME}" mkdir -p /app/input/single_cell_analysis/v1.2.0
-          docker cp "${STAGING}/." "${QA_NAME}:/app/input/single_cell_analysis/v1.2.0/"
+          docker exec "${QA_NAME}" mkdir -p "/app/input/${QA_TEST_INPUT_PATH}"
+          docker cp "${STAGING}/." "${QA_NAME}:/app/input/${QA_TEST_INPUT_PATH}/"
           echo "::group::HTML inside QA container (sanity)"
-          docker exec "${QA_NAME}" ls -la /app/input/single_cell_analysis/v1.2.0 || true
+          docker exec "${QA_NAME}" ls -la "/app/input/${QA_TEST_INPUT_PATH}" || true
           echo "::endgroup::"
           set +e
           docker exec "${QA_NAME}" \
-            pytest -m "single_cell" --disable-warnings --html=/tmp/single_cell_blueprint_test.html
+            pytest -m "${QA_PYTEST_MARK}" --disable-warnings --html=/tmp/tfm_qa_test.html
           PY_RC=$?
           set -e
-          docker cp "${QA_NAME}:/tmp/single_cell_blueprint_test.html" "${DEST}/single_cell_blueprint_test.html" 2>/dev/null || \
+          docker cp "${QA_NAME}:/tmp/tfm_qa_test.html" "${DEST}/tfm_qa_test.html" 2>/dev/null || \
             echo "::warning::Could not docker cp pytest HTML report (rc may be nonzero)."
           docker rm -f "${QA_NAME}"
           exit "${PY_RC}"
