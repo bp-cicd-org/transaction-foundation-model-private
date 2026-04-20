@@ -556,8 +556,10 @@ jobs:
           )
           PY
 
-          python3 -m pip install -q --upgrade pip
-          python3 -m pip install -q pytest pyyaml nbformat beautifulsoup4 pytest-html
+          VENV_DIR="${CLONE}/.venv-pytest"
+          python3 -m venv "${VENV_DIR}"
+          "${VENV_DIR}/bin/python" -m pip install -q --upgrade pip
+          "${VENV_DIR}/bin/python" -m pip install -q pytest pyyaml nbformat beautifulsoup4 pytest-html
 
           mkdir -p "${CLONE}/input" "${CLONE}/reports"
 
@@ -582,7 +584,7 @@ jobs:
 
           cd "${CLONE}"
           set +e
-          PYTHONPATH=. python3 -m pytest "${QA_PYTEST_FILE}" \
+          PYTHONPATH=. "${VENV_DIR}/bin/python" -m pytest "${QA_PYTEST_FILE}" \
             -m "${QA_PYTEST_MARK}" \
             --disable-warnings \
             --override-ini addopts= \
