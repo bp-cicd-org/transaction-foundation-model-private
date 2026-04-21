@@ -13,13 +13,13 @@
 #      cells into /tmp (inline Python on runner → docker cp), then papermill. Repo .ipynb unchanged.
 #   Optional: blueprint QA — pull BLUEPRINT_TEST_IMAGE, stage result_*.html → /app/input/transaction_foundation_model/
 #   (must match data/notebook/test_data_transaction_foundation_model.yaml html_file), pytest in container.
-#   Docker auth: secrets.TEST_DOCKER_PULL_KEY or secrets.NGC_API_KEY (same nvcr.io login pattern as NeMo pull).
+#   Docker auth for blueprint image: secrets.TEST_DOCKER_PULL_KEY (required for Run Test Code); optional pre-step uses NGC_API_KEY elsewhere.
 #
 # Required secret: NGC_API_KEY — NVIDIA NGC API key for docker login to nvcr.io
 #   (NeMo image is not anonymously pullable; login as user '$oauthtoken', password = key)
 # Optional: HUGGING_FACE_HUB_TOKEN — passed into papermill container as HF_TOKEN if notebooks need HF.
 # Optional: SMTP_USERNAME, SMTP_PASSWORD — Gmail SMTP for Send mail (dawidd6/action-send-mail).
-# Optional: TEST_DOCKER_PULL_KEY — nvcr.io token for blueprint-github-test-image (else NGC_API_KEY used if set).
+# Run Test Code: TEST_DOCKER_PULL_KEY — required nvcr.io token for blueprint-github-test-image (separate from NGC_API_KEY for NeMo).
 # =============================================================================
 
 name: Transaction Foundation Model Launchable + Papermill notebooks
@@ -511,18 +511,23 @@ jobs:
           BLUEPRINT_TEST_IMAGE: ${{ env.BLUEPRINT_TEST_IMAGE }}
           QA_PYTEST_MARK: ${{ env.QA_PYTEST_MARK }}
           QA_PYTEST_FILE: ${{ env.QA_PYTEST_FILE }}
+          # Dedicated nvcr.io PAT for blueprint test image (do not reuse NGC_API_KEY unless you choose to store the same value twice).
           TEST_DOCKER_PULL_KEY: ${{ secrets.TEST_DOCKER_PULL_KEY }}
           NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
         run: |
           set -euo pipefail
-          PULL_KEY="${TEST_DOCKER_PULL_KEY:-${NGC_API_KEY:-}}"
-          if [ -z "${PULL_KEY}" ]; then
-            echo "Skipping Run Test Code: set TEST_DOCKER_PULL_KEY or NGC_API_KEY for nvcr.io pull."
+          if [ -z "${TEST_DOCKER_PULL_KEY:-}" ]; then
+            echo "Skipping Run Test Code: repository secret TEST_DOCKER_PULL_KEY is not set."
             exit 0
           fi
+          echo "======================================="
           echo "::group::docker login nvcr.io (blueprint test image)"
-          echo "${PULL_KEY}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
+          echo "${TEST_DOCKER_PULL_KEY}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
           echo "::endgroup::"
+
+          echo "Waiting 5 minutes for services to fully stabilize..."
+          sleep 600
+          echo "✅ Wait completed"
 
           SRC="${DEST}/notebook_output"
           if [ ! -d "${SRC}" ] || [ -z "$(ls -A "${SRC}" 2>/dev/null)" ]; then
