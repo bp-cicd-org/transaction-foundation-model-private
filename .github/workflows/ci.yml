@@ -557,9 +557,39 @@ jobs:
           PY
 
           VENV_DIR="${CLONE}/.venv-pytest"
-          python3 -m venv "${VENV_DIR}"
-          "${VENV_DIR}/bin/python" -m pip install -q --upgrade pip
-          "${VENV_DIR}/bin/python" -m pip install -q pytest pyyaml nbformat beautifulsoup4 pytest-html
+          PIP_TARGET="${CLONE}/.pytest-site-packages"
+
+          echo "::group::Ensure Python venv / test deps (PEP 668 / Debian)"
+          if ! python3 -m venv /tmp/tfm-venv-probe 2>/dev/null; then
+            rm -rf /tmp/tfm-venv-probe
+            if command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+              pyv="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+              sudo apt-get update -qq
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "python${pyv}-venv" \
+                || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
+            fi
+          else
+            rm -rf /tmp/tfm-venv-probe
+          fi
+
+          if python3 -m venv "${VENV_DIR}"; then
+            PY_RUN="${VENV_DIR}/bin/python"
+            PYTEST_PYTHONPATH="."
+            "${PY_RUN}" -m pip install -q --upgrade pip
+            "${PY_RUN}" -m pip install -q pytest pyyaml nbformat beautifulsoup4 pytest-html
+          else
+            echo "::warning::venv unavailable; installing deps with pip --target (no system site-packages)."
+            mkdir -p "${PIP_TARGET}"
+            python3 -m pip install -q --upgrade pip --target "${PIP_TARGET}" \
+              --break-system-packages 2>/dev/null \
+              || python3 -m pip install -q --upgrade pip --target "${PIP_TARGET}"
+            python3 -m pip install -q --target "${PIP_TARGET}" pytest pyyaml nbformat beautifulsoup4 pytest-html \
+              --break-system-packages 2>/dev/null \
+              || python3 -m pip install -q --target "${PIP_TARGET}" pytest pyyaml nbformat beautifulsoup4 pytest-html
+            PY_RUN="python3"
+            PYTEST_PYTHONPATH="${PIP_TARGET}:."
+          fi
+          echo "::endgroup::"
 
           mkdir -p "${CLONE}/input" "${CLONE}/reports"
 
@@ -584,7 +614,7 @@ jobs:
 
           cd "${CLONE}"
           set +e
-          PYTHONPATH=. "${VENV_DIR}/bin/python" -m pytest "${QA_PYTEST_FILE}" \
+          PYTHONPATH="${PYTEST_PYTHONPATH}" "${PY_RUN}" -m pytest "${QA_PYTEST_FILE}" \
             -m "${QA_PYTEST_MARK}" \
             --disable-warnings \
             --override-ini addopts= \
