@@ -340,11 +340,17 @@ jobs:
             echo "WARNING: requirements.txt not found under /notebooks; skipping uv pip install"
           fi
 
-          # Notebook 03 calls scripts/train_decoder_model.py with /opt/venv/bin/python — that venv often lacks nemo_automodel.
+          # Notebook 03 uses /opt/venv/bin/python. PyPI nemo-automodel 0.3.x can lag NeMo 26 image transformers
+          # (TypeError: check_model_inputs() missing ...). Install from upstream main (see get_check_model_inputs_decorator).
+          if ! command -v git >/dev/null 2>&1; then
+            apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git
+          fi
           if [ -x /opt/venv/bin/python ]; then
-            /opt/venv/bin/python -m pip install -q "nemo-automodel>=0.3.0"
+            /opt/venv/bin/python -m pip install -q "pip>=24" setuptools wheel
+            /opt/venv/bin/python -m pip install -q "git+https://github.com/NVIDIA/NeMo-AutoModel.git@main"
           else
-            "$(command -v python)" -m pip install -q "nemo-automodel>=0.3.0"
+            "$(command -v python)" -m pip install -q "pip>=24" setuptools wheel
+            "$(command -v python)" -m pip install -q "git+https://github.com/NVIDIA/NeMo-AutoModel.git@main"
           fi
 
           cat >/tmp/tfm-cuda-ldpath.sh <<'LDPATH'
